@@ -1,0 +1,61 @@
+pl sql for post method api:
+
+DECLARE
+    l_json_clob         CLOB := :body_text; -- This is the corrected line
+    l_timestamp_unix    NUMBER;
+    l_timestamp_reading TIMESTAMP WITH LOCAL TIME ZONE;
+BEGIN
+    -- Set session timezone for consistent SAST timestamp handling
+    EXECUTE IMMEDIATE 'ALTER SESSION SET TIME_ZONE = ''Africa/Johannesburg''';
+
+    -- Extract Unix timestamp from the JSON using JSON_VALUE
+    l_timestamp_unix := JSON_VALUE(l_json_clob, '$.timestamp');
+
+    -- Convert Unix timestamp (UTC) to TIMESTAMP WITH LOCAL TIME ZONE (SAST)
+    IF l_timestamp_unix IS NOT NULL THEN
+        l_timestamp_reading := FROM_TZ(
+            TO_TIMESTAMP_TZ('1970-01-01 00:00:00 UTC', 'YYYY-MM-DD HH24:MI:SS TZR') + NUMTODSINTERVAL(l_timestamp_unix, 'SECOND'), 
+            'UTC'
+        ) AT TIME ZONE 'Africa/Johannesburg';
+    ELSE
+        -- Fallback to current timestamp if ESP32 timestamp is missing
+        l_timestamp_reading := CURRENT_TIMESTAMP;
+    END IF;
+
+    -- Insert into the table using JSON_VALUE for every field
+    INSERT INTO GREENHOUSE_SENSOR_READINGS (
+        TIMESTAMP_READING, TEMPERATURE_BMP280, TEMPERATURE_DHT22, PRESSURE, ALTITUDE, HUMIDITY,
+        FLAME_RAW, LIGHT_RAW,
+        MQ135_RAW, MQ135_BASELINE, MQ135_DROP,
+        MQ2_RAW, MQ2_BASELINE, MQ2_DROP,
+        MQ7_RAW, MQ7_BASELINE, MQ7_DROP
+    ) VALUES (
+        l_timestamp_reading,
+        JSON_VALUE(l_json_clob, '$.temperature_bmp280' RETURNING NUMBER),
+        JSON_VALUE(l_json_clob, '$.temperature_dht22'  RETURNING NUMBER),
+        JSON_VALUE(l_json_clob, '$.pressure'           RETURNING NUMBER),
+        JSON_VALUE(l_json_clob, '$.altitude'           RETURNING NUMBER),
+        JSON_VALUE(l_json_clob, '$.humidity'           RETURNING NUMBER),
+        JSON_VALUE(l_json_clob, '$.flame_raw'          RETURNING NUMBER),
+        JSON_VALUE(l_json_clob, '$.light_raw'          RETURNING NUMBER),
+        JSON_VALUE(l_json_clob, '$.mq135_raw'          RETURNING NUMBER),
+        JSON_VALUE(l_json_clob, '$.mq135_baseline'     RETURNING NUMBER),
+        JSON_VALUE(l_json_clob, '$.mq135_drop'         RETURNING NUMBER),
+        JSON_VALUE(l_json_clob, '$.mq2_raw'            RETURNING NUMBER),
+        JSON_VALUE(l_json_clob, '$.mq2_baseline'       RETURNING NUMBER),
+        JSON_VALUE(l_json_clob, '$.mq2_drop'           RETURNING NUMBER),
+        JSON_VALUE(l_json_clob, '$.mq7_raw'            RETURNING NUMBER),
+        JSON_VALUE(l_json_clob, '$.mq7_baseline'       RETURNING NUMBER),
+        JSON_VALUE(l_json_clob, '$.mq7_drop'           RETURNING NUMBER)
+    );
+
+    -- Set HTTP status to 201 Created upon successful insertion
+    :status := 201;
+    :response_body := '{"status":"success", "message":"Sensor data received and inserted."}';
+
+EXCEPTION
+    WHEN OTHERS THEN
+        -- Set HTTP status to 500 Internal Server Error
+        :status := 500;
+        :response_body := '{"status":"error", "message":"Failed to process sensor data. Error: ' || REPLACE(SQLERRM, '"', '\"') || '"}';
+END;
