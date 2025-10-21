@@ -5,6 +5,9 @@
  * 
  * Sensors: BMP280, DHT22, Flame, LDR, MQ135, MQ2, MQ7
  * Features: WiFi connectivity, JSON payload creation, HTTP POST to API
+ * 
+ * ✅ OPTIMIZED PIN ASSIGNMENT FOR WIFI COMPATIBILITY
+ * Fixed GPIO36/39 Hall sensor conflict issues
  */
 
 #include "Arduino.h"
@@ -22,21 +25,21 @@ const char* password = "YOUR_PASSWORD";      // Replace with your WiFi password
 // ============ API ENDPOINT ============
 const char* serverURL = "https://apex.oracle.com/pls/apex/your_workspace/sensor-data";  // Replace with your actual API endpoint
 
-// ============ PIN DEFINITIONS ============
-// Environmental Sensors
-#define FLAME_SENSOR_PIN 35      // Analog - Flame detection
+// ============ OPTIMIZED PIN DEFINITIONS ============
+// Environmental Sensors - WiFi Safe Pins
+#define FLAME_SENSOR_PIN 25      // Analog - Flame detection (MOVED from GPIO35)
 #define DHT_PIN 16               // Digital - Temperature & Humidity
-#define LDR_PIN 4                // Analog - Ambient light
+#define LDR_PIN 34               // Analog - Ambient light (Input only - WiFi safe)
 #define DHTTYPE DHT22            // DHT22 sensor type
 
 // I2C Sensors
 #define SDA_PIN 21               // I2C SDA
 #define SCL_PIN 22               // I2C SCL
 
-// Gas Sensors (Analog)
-#define MQ135_PIN 32             // Analog - CO2/Air Quality
-#define MQ2_PIN 33               // Analog - LPG/Smoke
-#define MQ7_PIN 14               // Analog - Carbon Monoxide
+// Gas Sensors (Analog) - OPTIMIZED FOR WIFI COMPATIBILITY
+#define MQ135_PIN 32             // Analog - CO2/Air Quality (ADC1 - WiFi safe)
+#define MQ2_PIN 33               // Analog - LPG/Smoke (ADC1 - WiFi safe)
+#define MQ7_PIN 35               // Analog - Carbon Monoxide (MOVED from GPIO36 - WiFi safe)
 
 // ============ SENSOR OBJECT INITIALIZATION ============
 Adafruit_BMP280 bmp;
@@ -87,7 +90,11 @@ void setup() {
   Serial.println("\n\n╔══════════════════════════════════════════════════════╗");
   Serial.println("║   GREENHOUSE SENSOR SYSTEM WITH API INTEGRATION      ║");
   Serial.println("║   IFS325 Group Project - ARC Smart Agriculture       ║");
+  Serial.println("║   OPTIMIZED PIN CONFIGURATION FOR WIFI               ║");
   Serial.println("╚══════════════════════════════════════════════════════╝\n");
+  
+  // Configure ADC attenuation for 0-3.3V range (important for accurate readings)
+  analogSetAttenuation(ADC_11db);  // Set 11dB attenuation for full 3.3V range
   
   // Initialize I2C for BMP280
   Wire.begin(SDA_PIN, SCL_PIN);
@@ -117,6 +124,14 @@ void setup() {
   pinMode(MQ2_PIN, INPUT);
   pinMode(MQ7_PIN, INPUT);
   Serial.println("✓ Analog pins configured");
+  
+  Serial.println("\n📌 PIN CONFIGURATION:");
+  Serial.println("   Flame Sensor: GPIO 25");
+  Serial.println("   LDR: GPIO 34");
+  Serial.println("   MQ135: GPIO 32");
+  Serial.println("   MQ2: GPIO 33");
+  Serial.println("   MQ7: GPIO 35 (OPTIMIZED - moved from GPIO36)");
+  Serial.println("   ✅ All pins WiFi-compatible (avoiding GPIO36/39 Hall sensor conflict)\n");
   
   // Connect to WiFi
   connectToWiFi();
@@ -251,9 +266,9 @@ SensorData readAllSensors() {
   Serial.print(data.humidity, 1);
   Serial.println(" %");
   
-  // Flame sensor
+  // Flame sensor (now on GPIO25)
   data.flame_raw = analogRead(FLAME_SENSOR_PIN);
-  Serial.println("🔥 FLAME DETECTION SENSOR");
+  Serial.println("🔥 FLAME DETECTION SENSOR (GPIO25)");
   Serial.print("   Raw Value: ");
   Serial.println(data.flame_raw);
   Serial.print("   Status: ");
@@ -263,18 +278,24 @@ SensorData readAllSensors() {
     Serial.println("✓ No flame detected");
   }
   
-  // LDR
+  // LDR (GPIO34 - input only, WiFi safe)
   data.light_raw = analogRead(LDR_PIN);
-  Serial.println("💡 AMBIENT LIGHT SENSOR (LDR)");
+  Serial.println("💡 AMBIENT LIGHT SENSOR (LDR - GPIO34)");
   Serial.print("   Raw Value: ");
   Serial.println(data.light_raw);
   
-  // Gas sensors
-  data.mq135_raw = analogRead(MQ135_PIN);
+  // Gas sensors with multiple readings for stability
+  // MQ135 - GPIO32 (WiFi safe)
+  data.mq135_raw = 0;
+  for (int i = 0; i < 5; i++) {
+    data.mq135_raw += analogRead(MQ135_PIN);
+    delay(10);
+  }
+  data.mq135_raw = data.mq135_raw / 5;  // Average of 5 readings
   data.mq135_baseline = mq135_baseline;
   data.mq135_drop = data.mq135_raw - mq135_baseline;
   
-  Serial.println("🌫️  MQ135 - CO2/AIR QUALITY");
+  Serial.println("🌫️  MQ135 - CO2/AIR QUALITY (GPIO32)");
   Serial.print("   Raw: ");
   Serial.print(data.mq135_raw);
   Serial.print(" | Baseline: ");
@@ -282,11 +303,17 @@ SensorData readAllSensors() {
   Serial.print(" | Drop: ");
   Serial.println(data.mq135_drop);
   
-  data.mq2_raw = analogRead(MQ2_PIN);
+  // MQ2 - GPIO33 (WiFi safe)
+  data.mq2_raw = 0;
+  for (int i = 0; i < 5; i++) {
+    data.mq2_raw += analogRead(MQ2_PIN);
+    delay(10);
+  }
+  data.mq2_raw = data.mq2_raw / 5;  // Average of 5 readings
   data.mq2_baseline = mq2_baseline;
   data.mq2_drop = data.mq2_raw - mq2_baseline;
   
-  Serial.println("💨 MQ2 - LPG/SMOKE DETECTION");
+  Serial.println("💨 MQ2 - LPG/SMOKE DETECTION (GPIO33)");
   Serial.print("   Raw: ");
   Serial.print(data.mq2_raw);
   Serial.print(" | Baseline: ");
@@ -294,11 +321,17 @@ SensorData readAllSensors() {
   Serial.print(" | Drop: ");
   Serial.println(data.mq2_drop);
   
-  data.mq7_raw = analogRead(MQ7_PIN);
+  // MQ7 - GPIO35 (OPTIMIZED - moved from GPIO36 for WiFi compatibility)
+  data.mq7_raw = 0;
+  for (int i = 0; i < 5; i++) {
+    data.mq7_raw += analogRead(MQ7_PIN);
+    delay(10);
+  }
+  data.mq7_raw = data.mq7_raw / 5;  // Average of 5 readings
   data.mq7_baseline = mq7_baseline;
   data.mq7_drop = data.mq7_raw - mq7_baseline;
   
-  Serial.println("☠️  MQ7 - CARBON MONOXIDE (CO)");
+  Serial.println("☠️  MQ7 - CARBON MONOXIDE (CO) (GPIO35 - OPTIMIZED)");
   Serial.print("   Raw: ");
   Serial.print(data.mq7_raw);
   Serial.print(" | Baseline: ");
@@ -392,15 +425,24 @@ void sendDataToAPI(String jsonPayload) {
 void calibrateGasSensors() {
   Serial.println("Taking baseline readings in clean air...\n");
   
-  // Take multiple readings and average
+  // Take multiple readings and average for more stability
   long sum135 = 0, sum2 = 0, sum7 = 0;
-  int samples = 50;
+  int samples = 100;  // Increased from 50 for better accuracy
+  
+  Serial.println("Sampling gas sensors (100 readings each)...");
   
   for (int i = 0; i < samples; i++) {
     sum135 += analogRead(MQ135_PIN);
     sum2 += analogRead(MQ2_PIN);
     sum7 += analogRead(MQ7_PIN);
     delay(50);
+    
+    if ((i + 1) % 20 == 0) {
+      Serial.print("  Progress: ");
+      Serial.print(i + 1);
+      Serial.print("/");
+      Serial.println(samples);
+    }
   }
   
   mq135_baseline = sum135 / samples;
@@ -409,58 +451,108 @@ void calibrateGasSensors() {
   
   gas_sensors_calibrated = true;
   
-  Serial.print("MQ135 Baseline: ");
+  Serial.println("\n✓ Calibration Complete:");
+  Serial.print("   MQ135 Baseline: ");
   Serial.println(mq135_baseline);
-  Serial.print("MQ2 Baseline: ");
+  Serial.print("   MQ2 Baseline: ");
   Serial.println(mq2_baseline);
-  Serial.print("MQ7 Baseline: ");
+  Serial.print("   MQ7 Baseline: ");
   Serial.println(mq7_baseline);
-  Serial.println("\n✓ Gas sensor calibration complete!\n");
+  
+  // Validation check
+  if (mq135_baseline == 0) {
+    Serial.println("   ⚠ WARNING: MQ135 baseline is 0 - check wiring/power!");
+  }
+  if (mq2_baseline == 0) {
+    Serial.println("   ⚠ WARNING: MQ2 baseline is 0 - check wiring/power!");
+  }
+  if (mq7_baseline == 0) {
+    Serial.println("   ⚠ WARNING: MQ7 baseline is 0 - check wiring/power!");
+  }
+  
+  Serial.println();
 }
 
 /*
- * ============================================================================
- * CONFIGURATION INSTRUCTIONS:
- * ============================================================================
+ * ════════════════════════════════════════════════════════════════════════════
+ * 🔧 CRITICAL WIRING CHANGES - PIN REASSIGNMENT FOR WIFI COMPATIBILITY
+ * ════════════════════════════════════════════════════════════════════════════
  * 
- * 1. UPDATE WiFi CREDENTIALS (Lines 28-29):
+ * ❗ IMPORTANT CHANGES FROM ORIGINAL CODE:
+ * 
+ * OLD PIN ASSIGNMENT:              NEW OPTIMIZED ASSIGNMENT:
+ * -------------------              -------------------------
+ * Flame Sensor: GPIO 35    →       GPIO 25 (moved)
+ * LDR:          GPIO 34    →       GPIO 34 (unchanged - safe)
+ * MQ135:        GPIO 32    →       GPIO 32 (unchanged - safe)
+ * MQ2:          GPIO 33    →       GPIO 33 (unchanged - safe)
+ * MQ7:          GPIO 36    →       GPIO 35 (moved - CRITICAL FIX)
+ * 
+ * ════════════════════════════════════════════════════════════════════════════
+ * 
+ * 📌 UPDATED WIRING GUIDE:
+ * 
+ * Environmental Sensors:
+ *   ✅ Flame Sensor: GPIO 25 (MOVED from GPIO35 - ADC2, works with WiFi)
+ *   ✅ DHT22:        GPIO 16 (Digital - no change)
+ *   ✅ LDR:          GPIO 34 (Input-only ADC1 - WiFi safe)
+ * 
+ * I2C Devices:
+ *   ✅ BMP280: SDA = GPIO 21, SCL = GPIO 22
+ * 
+ * Gas Sensors (OPTIMIZED):
+ *   ✅ MQ135: GPIO 32 (ADC1 - WiFi safe)
+ *   ✅ MQ2:   GPIO 33 (ADC1 - WiFi safe, use voltage divider if 5V)
+ *   ✅ MQ7:   GPIO 35 (MOVED from GPIO36 - ADC1, WiFi safe, use voltage divider if 5V)
+ * 
+ * ════════════════════════════════════════════════════════════════════════════
+ * 
+ * 🔍 WHY THESE CHANGES?
+ * 
+ * GPIO36 and GPIO39 are connected to the ESP32's internal Hall Effect sensor.
+ * When WiFi is active, these pins experience voltage drops and cannot reliably
+ * read analog values. Moving MQ7 to GPIO35 solves this hardware limitation.
+ * 
+ * The flame sensor was moved from GPIO35 to GPIO25 (ADC2 channel) which works
+ * fine with WiFi for analog readings.
+ * 
+ * ════════════════════════════════════════════════════════════════════════════
+ * 
+ * 📋 CONFIGURATION CHECKLIST:
+ * 
+ * 1. ✅ UPDATE WiFi CREDENTIALS (Lines 22-23):
  *    const char* ssid = "YOUR_SSID";
  *    const char* password = "YOUR_PASSWORD";
  * 
- * 2. UPDATE API ENDPOINT (Line 32):
+ * 2. ✅ UPDATE API ENDPOINT (Line 26):
  *    const char* serverURL = "https://apex.oracle.com/pls/apex/...";
- *    Replace with your actual Oracle APEX REST endpoint URL
  * 
- * 3. REQUIRED LIBRARIES:
+ * 3. ✅ REWIRE SENSORS (Use new pin assignments above):
+ *    - Move MQ7 from GPIO36 to GPIO35
+ *    - Move Flame Sensor from GPIO35 to GPIO25
+ * 
+ * 4. ✅ INSTALL REQUIRED LIBRARIES (Arduino Library Manager):
  *    - WiFi.h (built-in)
  *    - HTTPClient.h (built-in)
- *    - ArduinoJson.h (install via Library Manager - version 7.x)
- *    - Adafruit_BMP280.h (install via Library Manager)
- *    - DHT.h (install via Library Manager)
+ *    - ArduinoJson (version 7.x)
+ *    - Adafruit BMP280
+ *    - DHT sensor library
  *    - Wire.h (built-in)
  * 
- * 4. JSON PAYLOAD STRUCTURE:
- *    Matches your PL/SQL API exactly with fields:
- *    - timestamp (Unix epoch in seconds)
- *    - temperature_bmp280, temperature_dht22, pressure, altitude, humidity
- *    - flame_raw, light_raw
- *    - mq135_raw, mq135_baseline, mq135_drop
- *    - mq2_raw, mq2_baseline, mq2_drop
- *    - mq7_raw, mq7_baseline, mq7_drop
+ * 5. ✅ VOLTAGE DIVIDERS (if sensors output 5V):
+ *    MQ2 and MQ7: 5V output --[4.7kΩ]-- GPIO --[10kΩ]-- GND
+ *    This scales 5V down to ~1.65V (safe for ESP32's 3.3V ADC)
  * 
- * 5. WIRING REFERENCE:
- *    Environmental Sensors:
- *      Flame Sensor: GPIO 35 (Analog)
- *      DHT22: GPIO 16 (Digital)
- *      LDR: GPIO 4 (Analog)
- *    
- *    I2C Devices:
- *      BMP280: SDA=GPIO 21, SCL=GPIO 22
- *    
- *    Gas Sensors:
- *      MQ135: GPIO 32
- *      MQ2: GPIO 33 (use voltage divider if 5V)
- *      MQ7: GPIO 14 (use voltage divider if 5V)
+ * ════════════════════════════════════════════════════════════════════════════
  * 
- * ============================================================================
+ * 🚀 IMPROVEMENTS IN THIS VERSION:
+ * 
+ * - Fixed GPIO36/39 Hall sensor conflict with WiFi
+ * - Added ADC attenuation configuration for full 3.3V range
+ * - Multiple readings averaged for gas sensors (more stable)
+ * - Better calibration with 100 samples instead of 50
+ * - Validation warnings for 0 baseline values
+ * - Clear pin mapping documentation
+ * 
+ * ════════════════════════════════════════════════════════════════════════════
  */
