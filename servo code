@@ -1,0 +1,163 @@
+/*
+ * ============================================================================
+ * SERVO-ONLY CODE SNIPPETS
+ * ============================================================================
+ * Extracted from: Greenhouse_Monitor_With_Servo.ino (Version 3.3)
+ * This file shows only the lines related to the servo motor logic.
+ * ============================================================================
+ */
+
+// 1. INCLUDE THE SERVO LIBRARY
+#include <ESP32Servo.h> // <<< Include the ESP32 Servo library
+
+// ... other includes ...
+
+// ============================================================================
+// 2. PIN DEFINITION
+// ============================================================================
+
+// ... other pin definitions ...
+#define SERVO_PIN 25 // <<< Define the pin for your servo motor (e.g., GPIO 25)
+
+// ============================================================================
+// 3. SENSOR OBJECT INITIALIZATION
+// ============================================================================
+
+// ... other object initializations ...
+Servo myServo; // <<< Create a servo object
+
+// ============================================================================
+// 4. SERVO MOTOR CONTROL STATE VARIABLES
+// ============================================================================
+// <<< NEW SECTION: Variables to manage servo state
+int noFlameCounter = 0;
+const int NO_FLAME_RESET_COUNT = 4;    // Cycles of no-flame to re-open servo
+const int SERVO_OPEN_POS = 90;         // Servo position for "open" (e.g., 90 degrees)
+const int SERVO_CLOSED_POS = 0;        // Servo position for "closed" (e.g., 0 degrees)
+int currentServoPos = SERVO_OPEN_POS;  // Track the servo's current position
+
+// ... other code ...
+
+// ============================================================================
+// 5. SETUP FUNCTION (Servo Parts)
+// ============================================================================
+void setup() {
+    // ... other setup code ...
+    Serial.println("✓ Analog sensor pins configured");
+
+    // <<< NEW: Initialize Servo
+    myServo.attach(SERVO_PIN);
+    myServo.write(SERVO_OPEN_POS); // Start in the open position
+    currentServoPos = SERVO_OPEN_POS;
+    Serial.println("✓ Servo motor initialized and set to OPEN");
+
+    // ... other setup code ...
+}
+
+// ============================================================================
+// 6. MAIN LOOP (Servo Part)
+// ============================================================================
+void loop() {
+    // ... other loop code ...
+
+    // Read and publish sensor data at intervals
+    unsigned long currentTime = millis();
+    if (currentTime - lastReadTime >= READ_INTERVAL) {
+        lastReadTime = currentTime;
+
+        printCycleHeader(currentTime);
+
+        // Read all sensors
+        SensorData data = readAllSensors();
+
+        if (data.valid) {
+            // <<< NEW: Handle servo logic based on sensor data
+            handleServoLogic(data);
+
+            // Publish to MQTT if enabled
+            // ... mqtt publish code ...
+        } else {
+            Serial.println("❌ Sensor data invalid - skipping transmission");
+        }
+
+        Serial.println("\n════════════════════════════════════════════════════════\n");
+    }
+
+    delay(10);
+}
+
+// ... other functions ...
+
+// ============================================================================
+// 7. SERVO MOTOR LOGIC FUNCTION (The core logic)
+// ============================================================================
+void handleServoLogic(SensorData data) {
+    if (data.flame_detected == 1) {
+        // --- FLAME DETECTED ---
+        // Reset the 'no flame' counter
+        noFlameCounter = 0;
+
+        // Check if servo is already closed to avoid sending redundant commands
+        if (currentServoPos != SERVO_CLOSED_POS) {
+            Serial.println("🔥 SERVO: Flame detected! Closing servo.");
+            myServo.write(SERVO_CLOSED_POS);
+            currentServoPos = SERVO_CLOSED_POS;
+        } else {
+            Serial.println("🔥 SERVO: Flame detected. Servo already closed.");
+        }
+
+    } else {
+        // --- NO FLAME DETECTED ---
+        noFlameCounter++;
+
+        Serial.print("✓ SERVO: No flame detected. Counter: ");
+        Serial.print(noFlameCounter);
+        Serial.print("/");
+        Serial.println(NO_FLAME_RESET_COUNT);
+
+        // Check if we have reached the threshold to re-open
+        if (noFlameCounter >= NO_FLAME_RESET_COUNT) {
+
+            // Check if servo is already open
+            if (currentServoPos != SERVO_OPEN_POS) {
+                Serial.println("✓ SERVO: No flame for 4 cycles. Opening servo.");
+                myServo.write(SERVO_OPEN_POS);
+                currentServoPos = SERVO_OPEN_POS;
+            } else {
+                Serial.println("✓ SERVO: No flame. Servo already open.");
+            }
+
+            // Cap the counter to prevent overflow (good practice)
+            noFlameCounter = NO_FLAME_RESET_COUNT;
+        }
+    }
+}
+
+// ============================================================================
+// 8. HELPER COMMENTS (Servo Parts)
+// ============================================================================
+
+/*
+ * ============================================================================
+ * CONFIGURATION GUIDE
+ * ============================================================================
+ * ...
+ * 4. SERVO PIN (Line 66):
+ * #define SERVO_PIN 25
+ * (Change 25 to your desired GPIO pin)
+ *
+ * 5. SERVO POSITIONS (Lines 94-96):
+ * const int SERVO_OPEN_POS = 90;
+ * const int SERVO_CLOSED_POS = 0;
+ * (Adjust these angles to match your servo's physical setup)
+ * ...
+ * ============================================================================
+ * REQUIRED LIBRARIES
+ * ============================================================================
+ *
+ * Install via Arduino Library Manager:
+ * ...
+ * - ESP32Servo (by Kevin Harrington / John K. Bennett)
+ * ...
+ * ============================================================================
+ */
